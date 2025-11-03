@@ -1,7 +1,12 @@
 use anyhow::{anyhow, Result};
-use solana_sdk::pubkey::Pubkey;
+use jupiter_amm_interface::ClockRef;
+use solana_pubkey::Pubkey;
+use std::sync::atomic::Ordering;
 
-use crate::{calc_usd_amount, errors::CarrotAmmError, shares_earned};
+use crate::{
+    errors::CarrotAmmError,
+    math::{calc_usd_amount, shares_earned},
+};
 
 //
 // accounts
@@ -78,12 +83,12 @@ impl Vault {
 
     // get total vault balance in usd
     // looks at strategy balances and ATA balances
-    pub fn get_tvl(&self, asset_state: &Vec<AssetState>, ceiling: bool) -> Result<u128> {
+    pub fn get_tvl(&self, asset_state: &[AssetState], ceiling: bool) -> Result<u128> {
         let total_strategy_balance: u128 = self
             .strategies
             .iter()
             .map(|strat| {
-                let state = get_asset_state_by_id(&asset_state, strat.asset_id)?;
+                let state = get_asset_state_by_id(asset_state, strat.asset_id)?;
                 let balance_usd = strat.get_balance_usd(state, ceiling)?;
                 Ok(balance_usd)
             })
@@ -95,7 +100,7 @@ impl Vault {
             .assets
             .iter()
             .map(|asset| {
-                let state = get_asset_state_by_id(&asset_state, asset.asset_id)?;
+                let state = get_asset_state_by_id(asset_state, asset.asset_id)?;
                 let balance_usd = asset.get_balance_usd(state, ceiling)?;
                 Ok(balance_usd)
             })
@@ -110,7 +115,7 @@ impl Vault {
 
     pub fn calculate_accumulated_performance_fee(
         &self,
-        asset_state: &Vec<AssetState>,
+        asset_state: &[AssetState],
         shares_supply: u64,
         shares_decimals: u8,
         vault_tvl: u128,
@@ -123,9 +128,11 @@ impl Vault {
             // calculate performance fee for each strategy
             let strategy_performance_fee = self.fee.calculate_performance_fee(
                 strategy.net_earnings,
-                asset.oracle_price,
-                asset.oracle_price_expo,
-                asset.mint_decimals,
+                (
+                    asset.oracle_price,
+                    asset.oracle_price_expo,
+                    asset.mint_decimals,
+                ),
                 shares_supply,
                 shares_decimals,
                 vault_tvl,
@@ -300,12 +307,12 @@ impl Fee {
     // increments accumulated store
     pub fn calculate_management_fee(
         &self,
+        clock_ref: &ClockRef,
         tvl: u128,
         shares_supply: u64,
         shares_decimals: u8,
     ) -> Result<u64> {
-        // TODO: can i do this?
-        let current_time = chrono::Utc::now().timestamp();
+        let current_time = clock_ref.unix_timestamp.load(Ordering::Relaxed);
 
         // require a delta of over 60 seconds
         let time_delta = current_time - self.management_fee_last_update;
@@ -338,9 +345,7 @@ impl Fee {
     pub fn calculate_performance_fee(
         &self,
         net_earnings: i64,
-        asset_price: i64,
-        asset_price_expo: i32,
-        asset_decimals: u8,
+        (asset_price, asset_price_expo, asset_decimals): (i64, i32, u8),
         shares_supply: u64,
         shares_decimals: u8,
         vault_tvl: u128,

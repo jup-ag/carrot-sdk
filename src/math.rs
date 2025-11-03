@@ -55,7 +55,7 @@ pub fn calc_usd_amount(
     }
 
     let token_amount = token_amount as u128;
-    let price_feed_price = price_feed_price.abs() as u128;
+    let price_feed_price = price_feed_price.unsigned_abs() as u128;
 
     // Scale the token amount to the base unit (USD cents)
     let scaled_token_amount =
@@ -64,7 +64,7 @@ pub fn calc_usd_amount(
     // Perform safe multiplication to get numerator
     let numerator = scaled_token_amount.checked_mul(price_feed_price)?;
 
-    let result = {
+    {
         let divisor = 10_u128.checked_pow((-price_feed_expo) as u32)?;
 
         if ceiling {
@@ -76,9 +76,7 @@ pub fn calc_usd_amount(
             let adjusted_result = numerator.checked_div(divisor)?;
             Some(adjusted_result)
         }
-    };
-
-    result
+    }
 }
 
 pub fn calc_token_amount(
@@ -92,7 +90,7 @@ pub fn calc_token_amount(
         return None;
     }
 
-    let price_feed_price = price_feed_price.abs() as u128;
+    let price_feed_price = price_feed_price.unsigned_abs() as u128;
 
     // Handle exponent adjustment for result based on the expo sign
     let result = {
