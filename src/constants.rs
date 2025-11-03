@@ -42,4 +42,4 @@ pub const TOKEN_22_PROGRAM: Pubkey =
     Pubkey::from_str_const("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 
 // amm label
-pub const AMM_LABEL: &str = "CarrotAmm";
+pub const AMM_LABEL: &str = "Carrot";
