@@ -22,4 +22,7 @@ pub enum CarrotAmmError {
 
     #[error("Invalid Fee Calculation")]
     InvalidFeeCalculation = 6,
+
+    #[error("Oracle Price is Stale")]
+    OraclePriceStale = 7,
 }

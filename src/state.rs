@@ -599,7 +599,23 @@ impl PriceUpdateV2 {
     }
 
     // Updated get_price_usd_from_pyth_oracle function
-    pub fn get_price_usd_from_pyth_oracle(&self, rounding_mode: RoundingMode) -> (i64, i32) {
+    pub fn get_price_usd_from_pyth_oracle(
+        &self,
+        clock_ref: &ClockRef,
+        oracle_max_age: u64,
+        rounding_mode: RoundingMode,
+    ) -> Result<(i64, i32)> {
+        // get current time in seconds
+        let current_time = clock_ref.unix_timestamp.load(Ordering::Relaxed);
+
+        // determine how old the price is in seconds
+        let age = current_time.saturating_sub(self.price_message.publish_time) as u64;
+
+        // error if price is too old
+        if age > oracle_max_age {
+            return Err(CarrotAmmError::OraclePriceStale.into());
+        }
+
         // Adjust the price by the confidence value based on rounding mode
         let adjusted_price = match rounding_mode {
             RoundingMode::RoundUp => self
@@ -613,7 +629,7 @@ impl PriceUpdateV2 {
             RoundingMode::Avg => self.price_message.ema_price,
         };
 
-        (adjusted_price, self.price_message.exponent)
+        Ok((adjusted_price, self.price_message.exponent))
     }
 }
 
@@ -643,3 +659,5 @@ pub enum RoundingMode {
     RoundDown,
     Avg,
 }
+
+pub const MAX_AGE: u64 = 300;
