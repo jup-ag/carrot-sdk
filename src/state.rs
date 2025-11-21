@@ -645,8 +645,8 @@ pub struct PriceFeedMessage {
     pub price: i64,
     pub conf: u64,
     pub exponent: i32,
-    pub publish_time: i64,
-    pub prev_publish_time: i64,
+    pub publish_time: i64,      // in seconds
+    pub prev_publish_time: i64, // in seconds
     pub ema_price: i64,
     pub ema_conf: u64,
 }
@@ -660,4 +660,6 @@ pub enum RoundingMode {
     Avg,
 }
 
+// oracle price max age allowed in seconds
+// matches on chain check
 pub const MAX_AGE: u64 = 300;
