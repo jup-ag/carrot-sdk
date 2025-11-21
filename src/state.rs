@@ -29,44 +29,36 @@ impl Vault {
         let mut offset = 8; // start at 8 to skip anchor account discriminator
 
         // Read fixed size fields
-        let authority = Pubkey::new_from_array(account_data[offset..offset + 32].try_into()?);
-        offset += 32;
-
-        let shares = Pubkey::new_from_array(account_data[offset..offset + 32].try_into()?);
-        offset += 32;
+        let authority = read_pubkey(account_data, &mut offset)?;
+        let shares = read_pubkey(account_data, &mut offset)?;
 
         // Assuming Fee::load exists and correctly handles deserialization
-        let fee = Fee::load(&account_data[offset..offset + Fee::SPACE])?;
-        offset += Fee::SPACE;
+        let fee_data = read_bytes(account_data, &mut offset, Fee::SPACE)?;
+        let fee = Fee::load(fee_data)?;
 
-        let paused = account_data[offset] > 0;
-        offset += 1;
+        let paused = read_u8(account_data, &mut offset)? > 0;
 
-        let asset_index = u16::from_le_bytes(account_data[offset..offset + 2].try_into()?);
-        offset += 2;
-
-        let strategy_index = u16::from_le_bytes(account_data[offset..offset + 2].try_into()?);
-        offset += 2;
+        let asset_index = read_u16(account_data, &mut offset)?;
+        let strategy_index = read_u16(account_data, &mut offset)?;
 
         // Dynamic Vec<Asset> deserialization
-        let assets_len = u32::from_le_bytes(account_data[offset..offset + 4].try_into()?);
-        offset += 4;
-        let mut assets = Vec::with_capacity(assets_len as usize);
+        let assets_len = usize::try_from(read_u32(account_data, &mut offset)?)
+            .map_err(|_| CarrotAmmError::InvalidAccountData)?;
+        let mut assets = Vec::with_capacity(assets_len);
         for _ in 0..assets_len {
-            let asset = Asset::load(&account_data[offset..offset + Asset::SPACE])?;
+            let asset_data = read_bytes(account_data, &mut offset, Asset::SPACE)?;
+            let asset = Asset::load(asset_data)?;
             assets.push(asset);
-            offset += Asset::SPACE;
         }
 
         // Dynamic Vec<StrategyRecord> deserialization
-        let strategies_len = u32::from_le_bytes(account_data[offset..offset + 4].try_into()?);
-        offset += 4;
-        let mut strategies = Vec::with_capacity(strategies_len as usize);
+        let strategies_len = usize::try_from(read_u32(account_data, &mut offset)?)
+            .map_err(|_| CarrotAmmError::InvalidAccountData)?;
+        let mut strategies = Vec::with_capacity(strategies_len);
         for _ in 0..strategies_len {
-            let strategy =
-                StrategyRecord::load(&account_data[offset..offset + StrategyRecord::SPACE])?;
+            let strategy_data = read_bytes(account_data, &mut offset, StrategyRecord::SPACE)?;
+            let strategy = StrategyRecord::load(strategy_data)?;
             strategies.push(strategy);
-            offset += StrategyRecord::SPACE;
         }
 
         Ok(Vault {
@@ -175,13 +167,14 @@ impl Asset {
     pub const SPACE: usize = 2 + 32 + 1 + 32 + 32;
 
     pub fn load(account_data: &[u8]) -> Result<Self> {
-        assert_eq!(account_data.len(), Self::SPACE);
+        ensure_exact_data_len(account_data, Self::SPACE)?;
+        let mut offset = 0;
 
-        let asset_id = u16::from_le_bytes(account_data[0..2].try_into()?);
-        let mint = Pubkey::new_from_array(account_data[2..34].try_into()?);
-        let decimals = account_data[34];
-        let ata = Pubkey::new_from_array(account_data[35..67].try_into()?);
-        let oracle = Pubkey::new_from_array(account_data[67..99].try_into()?);
+        let asset_id = read_u16(account_data, &mut offset)?;
+        let mint = read_pubkey(account_data, &mut offset)?;
+        let decimals = read_u8(account_data, &mut offset)?;
+        let ata = read_pubkey(account_data, &mut offset)?;
+        let oracle = read_pubkey(account_data, &mut offset)?;
 
         Ok(Asset {
             asset_id,
@@ -216,12 +209,13 @@ impl StrategyRecord {
     pub const SPACE: usize = 2 + 2 + 8 + 8;
 
     pub fn load(account_data: &[u8]) -> Result<Self> {
-        assert_eq!(account_data.len(), Self::SPACE);
+        ensure_exact_data_len(account_data, Self::SPACE)?;
+        let mut offset = 0;
 
-        let strategy_id = u16::from_le_bytes(account_data[0..2].try_into()?);
-        let asset_id = u16::from_le_bytes(account_data[2..4].try_into()?);
-        let balance = u64::from_le_bytes(account_data[4..12].try_into()?);
-        let net_earnings = i64::from_le_bytes(account_data[12..20].try_into()?);
+        let strategy_id = read_u16(account_data, &mut offset)?;
+        let asset_id = read_u16(account_data, &mut offset)?;
+        let balance = read_u64(account_data, &mut offset)?;
+        let net_earnings = read_i64(account_data, &mut offset)?;
 
         Ok(StrategyRecord {
             strategy_id,
@@ -267,31 +261,16 @@ impl Fee {
     const SECONDS_IN_YEAR: f64 = 31557600.0;
 
     pub fn load(account_data: &[u8]) -> Result<Self> {
-        assert_eq!(account_data.len(), Self::SPACE);
-
+        ensure_exact_data_len(account_data, Self::SPACE)?;
         let mut offset = 0;
 
         // Deserialize each field from the byte slice
-        let redemption_fee_bps = u16::from_le_bytes(account_data[offset..offset + 2].try_into()?);
-        offset += 2;
-
-        let redemption_fee_accumulated =
-            u64::from_le_bytes(account_data[offset..offset + 8].try_into()?);
-        offset += 8;
-
-        let management_fee_bps = u16::from_le_bytes(account_data[offset..offset + 2].try_into()?);
-        offset += 2;
-
-        let management_fee_last_update =
-            i64::from_le_bytes(account_data[offset..offset + 8].try_into()?);
-        offset += 8;
-
-        let management_fee_accumulated =
-            u64::from_le_bytes(account_data[offset..offset + 8].try_into()?);
-        offset += 8;
-
-        let performance_fee_bps = u16::from_le_bytes(account_data[offset..offset + 2].try_into()?);
-        // No need to adjust offset here if it's the last field
+        let redemption_fee_bps = read_u16(account_data, &mut offset)?;
+        let redemption_fee_accumulated = read_u64(account_data, &mut offset)?;
+        let management_fee_bps = read_u16(account_data, &mut offset)?;
+        let management_fee_last_update = read_i64(account_data, &mut offset)?;
+        let management_fee_accumulated = read_u64(account_data, &mut offset)?;
+        let performance_fee_bps = read_u16(account_data, &mut offset)?;
 
         Ok(Fee {
             redemption_fee_bps,
@@ -534,52 +513,34 @@ impl PriceUpdateV2 {
     pub const SPACE: usize = 8 + 32 + 2 + 32 + 8 + 8 + 4 + 8 + 8 + 8 + 8 + 8;
 
     pub fn load(account_data: &[u8]) -> Result<Self> {
-        assert_eq!(account_data.len(), Self::SPACE);
+        ensure_exact_data_len(account_data, Self::SPACE)?;
         let mut offset = 8;
 
-        let write_authority = Pubkey::new_from_array(account_data[offset..offset + 32].try_into()?);
-        offset += 32;
+        let write_authority = read_pubkey(account_data, &mut offset)?;
 
         // parse verification level
-        let verification_byte = account_data[offset];
-        offset += 1; // Move past the verification level byte
+        let verification_byte = read_u8(account_data, &mut offset)?;
 
         let verification_level = match verification_byte {
             0x01 => VerificationLevel::Full,
             0x00 => {
                 // If Partial, assume the next byte indicates the number of signatures
-                let num_signatures = account_data[offset];
-                offset += 1; // Move past the num_signatures byte
+                let num_signatures = read_u8(account_data, &mut offset)?;
                 VerificationLevel::Partial { num_signatures }
             }
             _ => return Err(anyhow!("Unknown verification level byte")),
         };
 
-        let feed_id = account_data[offset..offset + 32].try_into()?;
-        offset += 32;
+        let feed_id: FeedId = read_array(account_data, &mut offset)?;
 
-        let price = i64::from_le_bytes(account_data[offset..offset + 8].try_into()?);
-        offset += 8;
-
-        let conf = u64::from_le_bytes(account_data[offset..offset + 8].try_into()?);
-        offset += 8;
-
-        let exponent = i32::from_le_bytes(account_data[offset..offset + 4].try_into()?);
-        offset += 4;
-
-        let publish_time = i64::from_le_bytes(account_data[offset..offset + 8].try_into()?);
-        offset += 8;
-
-        let prev_publish_time = i64::from_le_bytes(account_data[offset..offset + 8].try_into()?);
-        offset += 8;
-
-        let ema_price = i64::from_le_bytes(account_data[offset..offset + 8].try_into()?);
-        offset += 8;
-
-        let ema_conf = u64::from_le_bytes(account_data[offset..offset + 8].try_into()?);
-        offset += 8;
-
-        let posted_slot = u64::from_le_bytes(account_data[offset..offset + 8].try_into()?);
+        let price = read_i64(account_data, &mut offset)?;
+        let conf = read_u64(account_data, &mut offset)?;
+        let exponent = read_i32(account_data, &mut offset)?;
+        let publish_time = read_i64(account_data, &mut offset)?;
+        let prev_publish_time = read_i64(account_data, &mut offset)?;
+        let ema_price = read_i64(account_data, &mut offset)?;
+        let ema_conf = read_u64(account_data, &mut offset)?;
+        let posted_slot = read_u64(account_data, &mut offset)?;
 
         Ok(PriceUpdateV2 {
             write_authority,
@@ -663,3 +624,57 @@ pub enum RoundingMode {
 // oracle price max age allowed in seconds
 // matches on chain check
 pub const MAX_AGE: u64 = 300;
+
+fn ensure_exact_data_len(account_data: &[u8], expected: usize) -> Result<()> {
+    if account_data.len() != expected {
+        return Err(CarrotAmmError::InvalidAccountData.into());
+    }
+    Ok(())
+}
+
+fn read_bytes<'a>(data: &'a [u8], offset: &mut usize, len: usize) -> Result<&'a [u8]> {
+    let end = offset
+        .checked_add(len)
+        .ok_or(CarrotAmmError::InvalidAccountData)?;
+    let bytes = data
+        .get(*offset..end)
+        .ok_or(CarrotAmmError::InvalidAccountData)?;
+    *offset = end;
+    Ok(bytes)
+}
+
+fn read_array<const N: usize>(data: &[u8], offset: &mut usize) -> Result<[u8; N]> {
+    let bytes = read_bytes(data, offset, N)?;
+    bytes
+        .try_into()
+        .map_err(|_| CarrotAmmError::InvalidAccountData.into())
+}
+
+fn read_pubkey(data: &[u8], offset: &mut usize) -> Result<Pubkey> {
+    Ok(Pubkey::new_from_array(read_array::<32>(data, offset)?))
+}
+
+fn read_u8(data: &[u8], offset: &mut usize) -> Result<u8> {
+    let bytes = read_bytes(data, offset, 1)?;
+    Ok(bytes[0])
+}
+
+fn read_u16(data: &[u8], offset: &mut usize) -> Result<u16> {
+    Ok(u16::from_le_bytes(read_array::<2>(data, offset)?))
+}
+
+fn read_u32(data: &[u8], offset: &mut usize) -> Result<u32> {
+    Ok(u32::from_le_bytes(read_array::<4>(data, offset)?))
+}
+
+fn read_u64(data: &[u8], offset: &mut usize) -> Result<u64> {
+    Ok(u64::from_le_bytes(read_array::<8>(data, offset)?))
+}
+
+fn read_i32(data: &[u8], offset: &mut usize) -> Result<i32> {
+    Ok(i32::from_le_bytes(read_array::<4>(data, offset)?))
+}
+
+fn read_i64(data: &[u8], offset: &mut usize) -> Result<i64> {
+    Ok(i64::from_le_bytes(read_array::<8>(data, offset)?))
+}

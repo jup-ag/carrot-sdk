@@ -25,4 +25,8 @@ pub enum CarrotAmmError {
 
     #[error("Oracle Price is Stale")]
     OraclePriceStale = 7,
+
+    // jupiter defined errors
+    #[error("Invalid Account Data")]
+    InvalidAccountData = 100,
 }

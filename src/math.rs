@@ -58,18 +58,22 @@ pub fn calc_usd_amount(
     let price_feed_price = price_feed_price.unsigned_abs() as u128;
 
     // Scale the token amount to the base unit (USD cents)
-    let scaled_token_amount =
-        token_amount.checked_mul(10_u128.pow((PRECISION - token_decimal) as u32))?;
+    let decimal_adjustment = PRECISION.checked_sub(token_decimal)? as u32;
+    let scale_multiplier = 10_u128.checked_pow(decimal_adjustment)?;
+    let scaled_token_amount = token_amount.checked_mul(scale_multiplier)?;
 
     // Perform safe multiplication to get numerator
     let numerator = scaled_token_amount.checked_mul(price_feed_price)?;
 
     {
-        let divisor = 10_u128.checked_pow((-price_feed_expo) as u32)?;
+        let expo = price_feed_expo.checked_neg()? as u32;
+        let divisor = 10_u128.checked_pow(expo)?;
 
         if ceiling {
             // Adjust for ceiling by adding divisor - 1 before division
-            let adjusted_result = numerator.checked_add(divisor - 1)?.checked_div(divisor)?;
+            let adjusted_result = numerator
+                .checked_add(divisor.checked_sub(1)?)?
+                .checked_div(divisor)?;
             Some(adjusted_result)
         } else {
             // Direct division for floor rounding
@@ -90,14 +94,19 @@ pub fn calc_token_amount(
         return None;
     }
 
+    let price_exponent = price_feed_expo.checked_neg()? as u32;
     let price_feed_price = price_feed_price.unsigned_abs() as u128;
+    if price_feed_price == 0 {
+        return None;
+    }
 
     // Handle exponent adjustment for result based on the expo sign
     let result = {
-        let multiplier = 10_u128.pow((-price_feed_expo) as u32);
+        let multiplier = 10_u128.checked_pow(price_exponent)?;
         let temp_result = scaled_usd_amount.checked_mul(multiplier)?;
         let adjusted_result = if ceiling {
-            temp_result.checked_add(price_feed_price - 1)?
+            let increment = price_feed_price.checked_sub(1)?;
+            temp_result.checked_add(increment)?
         } else {
             temp_result
         };
@@ -105,9 +114,12 @@ pub fn calc_token_amount(
     }?;
 
     // Adjust for token decimals
-    let divisor = 10_u128.pow((PRECISION - token_decimal) as u32);
+    let decimal_adjustment = PRECISION.checked_sub(token_decimal)? as u32;
+    let divisor = 10_u128.checked_pow(decimal_adjustment)?;
     let token_amount = if ceiling {
-        result.checked_add(divisor - 1)?.checked_div(divisor)
+        result
+            .checked_add(divisor.checked_sub(1)?)?
+            .checked_div(divisor)
     } else {
         result.checked_div(divisor)
     }?;
