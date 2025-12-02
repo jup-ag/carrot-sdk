@@ -567,10 +567,11 @@ impl PriceUpdateV2 {
         rounding_mode: RoundingMode,
     ) -> Result<(i64, i32)> {
         // get current time in seconds
-        let current_time = clock_ref.unix_timestamp.load(Ordering::Relaxed);
+        let current_time: u64 = clock_ref.unix_timestamp.load(Ordering::Relaxed) as u64;
 
         // determine how old the price is in seconds
-        let age = current_time.saturating_sub(self.price_message.publish_time) as u64;
+        let publish_time: u64 = self.price_message.publish_time as u64;
+        let age = current_time.saturating_sub(publish_time);
 
         // error if price is too old
         if age > oracle_max_age {
