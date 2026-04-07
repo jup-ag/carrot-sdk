@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-solana-pubkey = "2.3"
+solana-pubkey = "4"
 anyhow = "1.0"
-jupiter-amm-interface = "0.6.0"
+jupiter-amm-interface = "0.6"
 thiserror = "2.0"
